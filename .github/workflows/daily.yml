@@ -1,0 +1,60 @@
+name: Daily Incremental Build
+
+on:
+  schedule:
+    # 15:00 UTC = 20:30 IST (after upstream typically updates around 19:15 IST)
+    - cron: "0 15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Defense-in-depth: never run this job in PR contexts.
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download Tabula
+        run: |
+          set -euo pipefail
+          mkdir -p vendor
+          curl -L -o vendor/tabula.jar https://github.com/tabulapdf/tabula-java/releases/download/v1.0.5/tabula-1.0.5-jar-with-dependencies.jar
+
+      - name: Build incremental dataset
+        env:
+          TABULA_JAR: vendor/tabula.jar
+          MODE: incremental
+          UPSTREAM_REPO: skbly7/sbi-tt-rates-historical
+          UPSTREAM_REF: master
+        run: node scripts/build-dataset.mjs
+
+      - name: Commit changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data
+            git commit -m "chore(data): daily incremental refresh"
+            git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:${GITHUB_REF_NAME}
+          fi
