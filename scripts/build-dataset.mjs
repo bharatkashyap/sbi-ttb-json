@@ -17,6 +17,13 @@ const mode = (process.env.MODE || "incremental").toLowerCase(); // incremental |
 const maxFiles = Number(process.env.MAX_FILES || 0);
 const startDate = (process.env.START_DATE || "").trim(); // YYYY-MM-DD inclusive
 
+const HUNDRED_UNIT_CODES = new Set(["JPY", "IDR", "THB", "KRW"]);
+const ALLOWED_CODES = new Set([
+  "USD", "AED", "AUD", "BDT", "BHD", "CAD", "CHF", "CNY", "DKK", "EUR", "GBP", "HKD",
+  "IDR", "JPY", "KES", "KRW", "KWD", "LKR", "MYR", "NOK", "NZD", "OMR", "PKR", "QAR",
+  "RUB", "SAR", "SEK", "SGD", "THB", "TRY", "ZAR",
+]);
+
 fs.mkdirSync(tmpDir, { recursive: true });
 fs.mkdirSync(byDateDir, { recursive: true });
 fs.mkdirSync(byCurrencyDir, { recursive: true });
@@ -55,6 +62,19 @@ function parseCsvLine(line) {
   return out;
 }
 
+function parseNumber(raw) {
+  if (!raw) return null;
+  const n = Number(String(raw).replace(/,/g, "").match(/-?\d+(?:\.\d+)?/)?.[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeRate(code, rate) {
+  if (HUNDRED_UNIT_CODES.has(code)) {
+    return Number((rate / 100).toFixed(6));
+  }
+  return rate;
+}
+
 function extractRatesFromCsv(csvText) {
   const lines = csvText
     .split(/\r?\n/)
@@ -64,34 +84,52 @@ function extractRatesFromCsv(csvText) {
   if (!lines.length) return {};
 
   const rows = lines.map(parseCsvLine);
-  const headerIdx = rows.findIndex((r) => r.some((c) => /currency/i.test(c)) && r.some((c) => /(tt|buying)/i.test(c)));
+
+  const headerIdx = rows.findIndex((r) =>
+    r.some((c) => /currency/i.test(c)) &&
+    r.some((c) => /tt\s*buy/i.test(c)),
+  );
+
+  const header = headerIdx >= 0 ? rows[headerIdx].map((x) => x.toLowerCase()) : [];
   const dataRows = headerIdx >= 0 ? rows.slice(headerIdx + 1) : rows;
-  const header = headerIdx >= 0 ? rows[headerIdx] : [];
 
-  let codeIdx = 0;
-  let buyIdx = -1;
-
-  if (header.length) {
-    const h = header.map((x) => x.toLowerCase());
-    codeIdx = h.findIndex((x) => x.includes("currency"));
-    buyIdx = h.findIndex((x) => x.includes("tt") && x.includes("buy"));
-    if (codeIdx < 0) codeIdx = 0;
+  let ttBuyIdx = header.findIndex((h) => /tt\s*buy/.test(h));
+  if (ttBuyIdx < 0) {
+    // Fallback to common SBI layout: [Currency Name, Pair, TT Buy, ...]
+    ttBuyIdx = 2;
   }
 
   const rates = {};
+
   for (const r of dataRows) {
     const cells = r.map((x) => x.replace(/^"|"$/g, "").trim());
-    const codeCell = (cells[codeIdx] || cells[0] || "").toUpperCase();
-    const codeMatch = codeCell.match(/\b([A-Z]{3})\b/);
+    const joined = cells.join(" ").toUpperCase();
+
+    // Only trust rows that explicitly carry pair code like USD/INR.
+    const codeMatch = joined.match(/\b([A-Z]{3})\/INR\b/);
     if (!codeMatch) continue;
 
     const code = codeMatch[1];
-    const rawRate = buyIdx >= 0 ? cells[buyIdx] : cells.find((x) => /\d/.test(x));
-    if (!rawRate) continue;
+    if (!ALLOWED_CODES.has(code)) continue;
 
-    const rate = Number(rawRate.replace(/,/g, "").match(/\d+(?:\.\d+)?/)?.[0]);
-    if (!Number.isFinite(rate)) continue;
-    rates[code] = rate;
+    let rate = parseNumber(cells[ttBuyIdx]);
+
+    // Fallback: pick first numeric after the code/pair cell.
+    if (rate === null) {
+      const pairIdx = cells.findIndex((c) => /[A-Z]{3}\/INR/.test(c.toUpperCase()));
+      if (pairIdx >= 0) {
+        for (let i = pairIdx + 1; i < cells.length; i += 1) {
+          const n = parseNumber(cells[i]);
+          if (n !== null) {
+            rate = n;
+            break;
+          }
+        }
+      }
+    }
+
+    if (rate === null || rate < 0) continue;
+    rates[code] = normalizeRate(code, rate);
   }
 
   return rates;
