@@ -170,14 +170,15 @@ const pdfPaths = (tree.tree || [])
   .filter((p) => /\.pdf$/i.test(p))
   .sort();
 
-const dateToPath = new Map();
+const dateToPaths = new Map();
 for (const p of pdfPaths) {
   const d = dateFromPdfPath(p);
   if (!d) continue;
-  dateToPath.set(d, p);
+  if (!dateToPaths.has(d)) dateToPaths.set(d, []);
+  dateToPaths.get(d).push(p);
 }
 
-let targetDates = [...dateToPath.keys()].sort();
+let targetDates = [...dateToPaths.keys()].sort();
 
 if (startDate) {
   if (!isIsoDate(startDate)) {
@@ -198,25 +199,37 @@ if (maxFiles > 0 && targetDates.length > maxFiles) {
 }
 
 for (const d of targetDates) {
-  const relPath = dateToPath.get(d);
-  const pdfUrl = `${RAW_BASE}/${relPath}`;
-  const pdfPath = path.join(tmpDir, `${d}.pdf`);
+  const candidates = (dateToPaths.get(d) || []).slice().sort().reverse();
+  let parsed = null;
 
-  fetchBinary(pdfUrl, pdfPath);
+  for (const relPath of candidates) {
+    const safeName = relPath.replace(/[/:]/g, "_");
+    const pdfUrl = `${RAW_BASE}/${relPath}`;
+    const pdfPath = path.join(tmpDir, safeName);
 
-  let csv = "";
-  try {
-    csv = execFileSync("java", ["-jar", tabulaJar, "-p", "all", "-f", "CSV", pdfPath], {
-      encoding: "utf8",
-      maxBuffer: 10 * 1024 * 1024,
-    });
-  } catch {
-    console.error(`tabula failed for ${relPath}`);
+    try {
+      fetchBinary(pdfUrl, pdfPath);
+      const csv = execFileSync("java", ["-jar", tabulaJar, "-p", "all", "-f", "CSV", pdfPath], {
+        encoding: "utf8",
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      const rates = extractRatesFromCsv(csv);
+      if (Object.keys(rates).length > 0) {
+        parsed = { sourcePath: relPath, rates };
+        break;
+      }
+      console.error(`no rates parsed for ${relPath}`);
+    } catch {
+      console.error(`tabula failed for ${relPath}`);
+    }
+  }
+
+  if (!parsed) {
+    console.error(`all candidates failed for ${d}`);
     continue;
   }
 
-  const rates = extractRatesFromCsv(csv);
-  const entry = { date: d, sourcePath: relPath, rates };
+  const entry = { date: d, sourcePath: parsed.sourcePath, rates: parsed.rates };
   fs.writeFileSync(path.join(byDateDir, `${d}.json`), JSON.stringify(entry, null, 2));
   existingByDate.set(d, entry);
 }
