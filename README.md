@@ -11,19 +11,19 @@ Builds machine-readable JSON from SBI TT historical PDFs published in:
 
 ## Local run
 
-1. Install Java 11+.
-2. Download tabula jar:
-   - `curl -L -o vendor/tabula.jar https://github.com/tabulapdf/tabula-java/releases/download/v1.0.5/tabula-1.0.5-jar-with-dependencies.jar`
-3. Build incrementally:
-   - `MODE=incremental TABULA_JAR=vendor/tabula.jar node scripts/build-dataset.mjs`
-4. Full rebuild:
-   - `MODE=full TABULA_JAR=vendor/tabula.jar node scripts/build-dataset.mjs`
+1. Install `pdftotext` (Poppler).
+   - macOS: `brew install poppler`
+2. Build incrementally:
+   - `MODE=incremental node scripts/build-dataset.mjs`
+3. Full rebuild:
+   - `MODE=full node scripts/build-dataset.mjs`
 
 Optional env vars:
 
 - `MODE=incremental|full` (default `incremental`)
 - `MAX_FILES=100` to cap processed files (useful for manual backfill)
-- `TABULA_JAR=/absolute/path/to/tabula.jar`
+- `UPSTREAM_REPO=owner/repo` (default `skbly7/sbi-tt-rates-historical`)
+- `UPSTREAM_REF=branch-or-sha` (default `master`)
 
 ## GitHub Actions
 

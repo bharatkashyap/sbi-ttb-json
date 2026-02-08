@@ -12,7 +12,6 @@ const tmpDir = path.join(cwd, "tmp");
 const byDateDir = path.join(cwd, "data", "by-date");
 const byCurrencyDir = path.join(cwd, "data", "currency");
 const latestFile = path.join(cwd, "data", "latest.json");
-const tabulaJar = process.env.TABULA_JAR || path.join(cwd, "vendor", "tabula.jar");
 const mode = (process.env.MODE || "incremental").toLowerCase(); // incremental | full
 const maxFiles = Number(process.env.MAX_FILES || 0);
 const startDate = (process.env.START_DATE || "").trim(); // YYYY-MM-DD inclusive
@@ -36,30 +35,6 @@ function fetchJson(url) {
 
 function fetchBinary(url, outPath) {
   execFileSync("curl", ["-sSL", "-o", outPath, url], { stdio: "inherit" });
-}
-
-function parseCsvLine(line) {
-  const out = [];
-  let cur = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        cur += '"';
-        i += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === "," && !inQuotes) {
-      out.push(cur.trim());
-      cur = "";
-    } else {
-      cur += ch;
-    }
-  }
-  out.push(cur.trim());
-  return out;
 }
 
 function parseNumber(raw) {
