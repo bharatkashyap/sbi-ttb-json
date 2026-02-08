@@ -84,24 +84,9 @@ function extractRatesFromCsv(csvText) {
   if (!lines.length) return {};
 
   const rows = lines.map(parseCsvLine);
-
-  const headerIdx = rows.findIndex((r) =>
-    r.some((c) => /currency/i.test(c)) &&
-    r.some((c) => /tt\s*buy/i.test(c)),
-  );
-
-  const header = headerIdx >= 0 ? rows[headerIdx].map((x) => x.toLowerCase()) : [];
-  const dataRows = headerIdx >= 0 ? rows.slice(headerIdx + 1) : rows;
-
-  let ttBuyIdx = header.findIndex((h) => /tt\s*buy/.test(h));
-  if (ttBuyIdx < 0) {
-    // Fallback to common SBI layout: [Currency Name, Pair, TT Buy, ...]
-    ttBuyIdx = 2;
-  }
-
   const rates = {};
 
-  for (const r of dataRows) {
+  for (const r of rows) {
     const cells = r.map((x) => x.replace(/^"|"$/g, "").trim());
     const joined = cells.join(" ").toUpperCase();
 
@@ -112,18 +97,15 @@ function extractRatesFromCsv(csvText) {
     const code = codeMatch[1];
     if (!ALLOWED_CODES.has(code)) continue;
 
-    let rate = parseNumber(cells[ttBuyIdx]);
-
-    // Fallback: pick first numeric after the code/pair cell.
-    if (rate === null) {
-      const pairIdx = cells.findIndex((c) => /[A-Z]{3}\/INR/.test(c.toUpperCase()));
-      if (pairIdx >= 0) {
-        for (let i = pairIdx + 1; i < cells.length; i += 1) {
-          const n = parseNumber(cells[i]);
-          if (n !== null) {
-            rate = n;
-            break;
-          }
+    // TT BUY is always the first numeric cell after CODE/INR in SBI layout.
+    let rate = null;
+    const pairIdx = cells.findIndex((c) => /[A-Z]{3}\/INR/.test(c.toUpperCase()));
+    if (pairIdx >= 0) {
+      for (let i = pairIdx + 1; i < cells.length; i += 1) {
+        const n = parseNumber(cells[i]);
+        if (n !== null) {
+          rate = n;
+          break;
         }
       }
     }
