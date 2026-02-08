@@ -34,15 +34,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Download Tabula
+      - name: Install pdftotext
         run: |
           set -euo pipefail
-          mkdir -p vendor
-          curl -L -o vendor/tabula.jar https://github.com/tabulapdf/tabula-java/releases/download/v1.0.5/tabula-1.0.5-jar-with-dependencies.jar
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
 
       - name: Build full dataset (from Sep 2025)
         env:
-          TABULA_JAR: vendor/tabula.jar
           MODE: full
           START_DATE: "2025-09-01"
           MAX_FILES: ${{ github.event.inputs.max_files }}

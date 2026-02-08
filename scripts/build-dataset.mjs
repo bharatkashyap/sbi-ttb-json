@@ -75,43 +75,26 @@ function normalizeRate(code, rate) {
   return rate;
 }
 
-function extractRatesFromCsv(csvText) {
-  const lines = csvText
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+function extractRatesFromPdfText(pdfText) {
+  const text = (pdfText || "").toUpperCase();
+  if (!text.trim()) return {};
 
-  if (!lines.length) return {};
-
-  const rows = lines.map(parseCsvLine);
   const rates = {};
+  const matches = [...text.matchAll(/\b([A-Z]{3})\/INR\b/g)];
 
-  for (const r of rows) {
-    const cells = r.map((x) => x.replace(/^"|"$/g, "").trim());
-    const joined = cells.join(" ").toUpperCase();
-
-    // Only trust rows that explicitly carry pair code like USD/INR.
-    const codeMatch = joined.match(/\b([A-Z]{3})\/INR\b/);
-    if (!codeMatch) continue;
-
-    const code = codeMatch[1];
+  for (let i = 0; i < matches.length; i += 1) {
+    const m = matches[i];
+    const code = m[1];
     if (!ALLOWED_CODES.has(code)) continue;
 
-    // TT BUY is always the first numeric cell after CODE/INR in SBI layout.
-    let rate = null;
-    const pairIdx = cells.findIndex((c) => /[A-Z]{3}\/INR/.test(c.toUpperCase()));
-    if (pairIdx >= 0) {
-      for (let i = pairIdx + 1; i < cells.length; i += 1) {
-        const n = parseNumber(cells[i]);
-        if (n !== null) {
-          rate = n;
-          break;
-        }
-      }
-    }
+    const start = m.index + m[0].length;
+    const end = i + 1 < matches.length ? matches[i + 1].index : text.length;
+    const window = text.slice(start, end);
 
-    if (rate === null || rate < 0) continue;
-    rates[code] = normalizeRate(code, rate);
+    // TT BUY is first numeric token after CODE/INR in SBI statement layout.
+    const n = parseNumber(window);
+    if (n === null || n < 0) continue;
+    rates[code] = normalizeRate(code, n);
   }
 
   return rates;
@@ -191,18 +174,18 @@ for (const d of targetDates) {
 
     try {
       fetchBinary(pdfUrl, pdfPath);
-      const csv = execFileSync("java", ["-jar", tabulaJar, "-p", "all", "-f", "CSV", pdfPath], {
+      const pdfText = execFileSync("pdftotext", [pdfPath, "-"], {
         encoding: "utf8",
         maxBuffer: 10 * 1024 * 1024,
       });
-      const rates = extractRatesFromCsv(csv);
+      const rates = extractRatesFromPdfText(pdfText);
       if (Object.keys(rates).length > 0) {
         parsed = { sourcePath: relPath, rates };
         break;
       }
       console.error(`no rates parsed for ${relPath}`);
     } catch {
-      console.error(`tabula failed for ${relPath}`);
+      console.error(`pdf text extraction failed for ${relPath}`);
     }
   }
 
