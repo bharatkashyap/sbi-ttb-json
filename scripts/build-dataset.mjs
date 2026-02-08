@@ -22,8 +22,9 @@ fs.mkdirSync(byDateDir, { recursive: true });
 fs.mkdirSync(byCurrencyDir, { recursive: true });
 
 function fetchJson(url) {
-  const out = execFileSync("curl", ["-sSL", url], { encoding: "utf8" });
-  return JSON.parse(out);
+  const outPath = path.join(tmpDir, "api-response.json");
+  execFileSync("curl", ["-sSL", "-o", outPath, url], { stdio: "inherit" });
+  return JSON.parse(fs.readFileSync(outPath, "utf8"));
 }
 
 function fetchBinary(url, outPath) {
